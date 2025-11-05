@@ -52,17 +52,7 @@ async function checkAuggieCLI(): Promise<void> {
   }
 }
 
-/**
- * Check if AUGMENT_SESSION_AUTH is set
- */
-function checkAuthToken(): void {
-  if (!process.env.AUGMENT_SESSION_AUTH) {
-    throw new Error(
-      "AUGMENT_SESSION_AUTH environment variable is required.\n" +
-      "Get your token by running: auggie token print"
-    );
-  }
-}
+
 
 /**
  * Run Auggie CLI command and stream output
@@ -133,22 +123,38 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
     // Handle process exit
     child.on("close", (code) => {
       clearTimeout(timeoutId);
-      
+
       if (timedOut) {
         return; // Already rejected
       }
-      
+
       if (code !== 0) {
+        const stderrText = stderr.trim();
+        const stdoutText = stdout.trim();
+
+        // Check for authentication errors
+        if (stderrText.includes("not logged in") ||
+            stderrText.includes("authentication") ||
+            stderrText.includes("unauthorized")) {
+          reject(new Error(
+            `Authentication required. Please either:\n` +
+            `1. Run 'auggie login' to authenticate, or\n` +
+            `2. Set AUGMENT_SESSION_AUTH environment variable (get token via 'auggie token print')\n\n` +
+            `Error details: ${stderrText || stdoutText || "<no details>"}`
+          ));
+          return;
+        }
+
         reject(new Error(
           `Auggie CLI failed with exit code ${code}\n` +
-          `STDERR: ${stderr.trim() || "<empty>"}\n` +
-          `STDOUT: ${stdout.trim() || "<empty>"}`
+          `STDERR: ${stderrText || "<empty>"}\n` +
+          `STDOUT: ${stdoutText || "<empty>"}`
         ));
         return;
       }
-      
+
       const duration = Date.now() - startTime;
-      
+
       resolve({
         answer: stdout.trim(),
         usage: {
@@ -286,18 +292,22 @@ async function main() {
     // Perform preflight checks
     console.error("[auggie-mcp] Checking Auggie CLI availability...");
     await checkAuggieCLI();
-    
-    console.error("[auggie-mcp] Checking authentication...");
-    checkAuthToken();
-    
+
+    // Note: Authentication token is optional - Auggie CLI will handle auth
+    if (process.env.AUGMENT_SESSION_AUTH) {
+      console.error("[auggie-mcp] Using AUGMENT_SESSION_AUTH from environment");
+    } else {
+      console.error("[auggie-mcp] No AUGMENT_SESSION_AUTH set - relying on Auggie CLI login");
+    }
+
     console.error("[auggie-mcp] Starting MCP server...");
-    
+
     // Create and start server
     const server = createServer();
     const transport = new StdioServerTransport();
-    
+
     await server.connect(transport);
-    
+
     console.error("[auggie-mcp] Server started successfully");
   } catch (error) {
     console.error(

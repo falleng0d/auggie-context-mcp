@@ -12,26 +12,23 @@ This MCP server is designed to be used with MCP clients like **Claude Desktop** 
 ### Prerequisites
 
 1. **Install Auggie CLI**: https://docs.augmentcode.com/cli/overview
-2. **Get your access token**:
+2. **Authenticate with Auggie**:
    ```bash
-   auggie token print
+   auggie login
    ```
-   Copy the entire JSON token (everything after `TOKEN=`)
+   This opens a browser for authentication. Once logged in, you're ready to go!
 
 ### Setup with Claude Desktop
 
 1. Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows)
-2. Add this configuration (replace `your-token-here` with your actual token):
+2. Add this configuration:
 
 ```json
 {
   "mcpServers": {
     "auggie-context": {
       "command": "npx",
-      "args": ["-y", "auggie-context-mcp@latest"],
-      "env": {
-        "AUGMENT_SESSION_AUTH": "{\"accessToken\":\"your-token-here\",\"tenantURL\":\"https://...\",\"scopes\":[\"read\",\"write\"]}"
-      }
+      "args": ["-y", "auggie-context-mcp@latest"]
     }
   }
 }
@@ -39,6 +36,8 @@ This MCP server is designed to be used with MCP clients like **Claude Desktop** 
 
 3. Restart Claude Desktop
 4. You should now see the `query_codebase` tool available in Claude
+
+**Note**: If you need to use a specific token instead of your Auggie CLI login, you can add an `env` section with `AUGMENT_SESSION_AUTH`. See the [Authentication](#authentication) section for details.
 
 ### Setup with Cursor
 
@@ -62,13 +61,27 @@ See [Installation & Usage](#installation--usage) section for detailed instructio
 - **Auggie CLI** installed and available on PATH
   - Install: See [Auggie CLI installation guide](https://docs.augmentcode.com/cli/overview)
   - Verify: `auggie --version`
-- **Augment Access Token** (REQUIRED - see Authentication section below)
+- **Augment Authentication** (see Authentication section below)
 
 ## Authentication
 
-⚠️ **REQUIRED**: You must provide an Augment access token to use this server.
+The server supports two authentication methods:
 
-### Get Your Token
+### Option 1: Auggie CLI Login (Recommended)
+
+Simply log in using the Auggie CLI:
+
+```bash
+auggie login
+```
+
+This opens a browser for authentication. Once logged in, the MCP server will automatically use your Auggie CLI session. No additional configuration needed!
+
+### Option 2: Environment Variable (AUGMENT_SESSION_AUTH)
+
+Alternatively, you can provide an explicit access token via the `AUGMENT_SESSION_AUTH` environment variable.
+
+**Get Your Token:**
 
 ```bash
 # 1. Ensure Auggie CLI is installed
@@ -86,11 +99,7 @@ This will output something like:
 TOKEN={"accessToken":"your-token-here","tenantURL":"https://...","scopes":["read","write"]}
 ```
 
-### Set the Token
-
-The server **requires** the `AUGMENT_SESSION_AUTH` environment variable to be set.
-
-**Option 1: In MCP client config (recommended)**
+**Set the Token in MCP client config:**
 
 Add the token to your MCP client configuration:
 
@@ -108,7 +117,7 @@ Add the token to your MCP client configuration:
 }
 ```
 
-**Option 2: Shell environment**
+**Or set in shell environment:**
 
 ```bash
 # Get your token
@@ -122,6 +131,11 @@ echo "export AUGMENT_SESSION_AUTH='$TOKEN'" >> ~/.zshrc
 source ~/.zshrc
 ```
 
+### Which Method Should I Use?
+
+- **Use Auggie CLI Login** if you're the only user on your machine and want the simplest setup
+- **Use AUGMENT_SESSION_AUTH** if you need to use a specific token or are in a shared/CI environment
+
 ⚠️ **Security**: Never commit tokens to source control. Use environment variables or secure config stores.
 
 ## Installation & Usage
@@ -132,7 +146,20 @@ source ~/.zshrc
 
 Add to your Cursor MCP config (`.cursor/mcp.json` - global or per-project):
 
-**⚠️ IMPORTANT**: Replace the `AUGMENT_SESSION_AUTH` value with your actual token from `auggie token print`
+**Simple setup (uses your Auggie CLI login):**
+
+```json
+{
+  "mcpServers": {
+    "auggie-context": {
+      "command": "npx",
+      "args": ["-y", "auggie-context-mcp@latest"]
+    }
+  }
+}
+```
+
+**With explicit token (optional):**
 
 ```json
 {
@@ -152,7 +179,20 @@ Add to your Cursor MCP config (`.cursor/mcp.json` - global or per-project):
 
 Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-**⚠️ IMPORTANT**: Replace the `AUGMENT_SESSION_AUTH` value with your actual token from `auggie token print`
+**Simple setup (uses your Auggie CLI login):**
+
+```json
+{
+  "mcpServers": {
+    "auggie-context": {
+      "command": "npx",
+      "args": ["-y", "auggie-context-mcp@latest"]
+    }
+  }
+}
+```
+
+**With explicit token (optional):**
 
 ```json
 {
@@ -172,7 +212,20 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 
-**⚠️ IMPORTANT**: Replace the `AUGMENT_SESSION_AUTH` value with your actual token from `auggie token print`
+**Simple setup (uses your Auggie CLI login):**
+
+```json
+{
+  "mcpServers": {
+    "auggie-context": {
+      "command": "npx",
+      "args": ["-y", "auggie-context-mcp@latest"]
+    }
+  }
+}
+```
+
+**With explicit token (optional):**
 
 ```json
 {
@@ -247,14 +300,20 @@ npm run dev
 # Build the project
 npm run build
 
-# Set your token
-export AUGMENT_SESSION_AUTH=$(auggie token print | grep '^TOKEN=' | cut -d= -f2-)
+# Make sure you're logged in to Auggie
+auggie login
 
 # Test with MCP Inspector (recommended)
 npx @modelcontextprotocol/inspector node dist/index.js
 
 # Or test with a real MCP client (Claude Desktop, Cursor)
 # by pointing it to your local build instead of npx
+```
+
+**Optional**: If you want to test with an explicit token instead of your Auggie CLI login:
+```bash
+export AUGMENT_SESSION_AUTH=$(auggie token print | grep '^TOKEN=' | cut -d= -f2-)
+npx @modelcontextprotocol/inspector node dist/index.js
 ```
 
 ## Architecture
@@ -289,7 +348,7 @@ npx @modelcontextprotocol/inspector node dist/index.js
 ### Server not showing up in Claude/Cursor
 
 1. **Check config file syntax**: Ensure your JSON is valid (no trailing commas, proper quotes)
-2. **Verify token is set**: Make sure `AUGMENT_SESSION_AUTH` is in the `env` section with your actual token
+2. **Verify authentication**: Make sure you've run `auggie login` or set `AUGMENT_SESSION_AUTH` in the config
 3. **Restart the client**: Completely quit and restart Claude Desktop or Cursor
 4. **Check logs**:
    - **Claude Desktop (macOS)**: `~/Library/Logs/Claude/mcp*.log`
@@ -306,10 +365,16 @@ auggie --version
 
 If not found, install from: https://docs.augmentcode.com/cli/overview
 
-### "AUGMENT_SESSION_AUTH environment variable is required"
+### "Authentication required" or "not logged in"
 
-You need to set your access token in the MCP client configuration:
+The Auggie CLI needs authentication. You have two options:
 
+**Option 1: Use Auggie CLI login (recommended)**
+```bash
+auggie login
+```
+
+**Option 2: Set explicit token in MCP config**
 1. Run `auggie token print` to get your token
 2. Copy the entire JSON value (everything after `TOKEN=`)
 3. Add it to the `env` section in your MCP config (see examples above)
