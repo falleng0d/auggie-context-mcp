@@ -10,6 +10,7 @@ import {
 import { spawn } from "child_process";
 import { promisify } from "util";
 import { exec } from "child_process";
+import * as os from "node:os";
 
 const execAsync = promisify(exec);
 
@@ -59,67 +60,69 @@ async function checkAuggieCLI(): Promise<void> {
  */
 async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
   const startTime = Date.now();
-  
+
+  let cmd = os.platform() === "win32" ? "cmd" : "auggie";
+
   // Build command arguments
-  const cmdArgs: string[] = [];
-  
+  const cmdArgs = os.platform() === "win32" ? ["/c", "auggie"] : [];
+
   // Use --print for non-interactive mode
   cmdArgs.push("--print");
-  
+
   // Add quiet mode to only get final output
   cmdArgs.push("--quiet");
-  
+
   // Add workspace root if provided
   if (args.workspace_root) {
     cmdArgs.push("--workspace-root", args.workspace_root);
   }
-  
+
   // Add model if provided
   if (args.model) {
     cmdArgs.push("--model", args.model);
   }
-  
+
   // Add rules path if provided
   if (args.rules_path) {
     cmdArgs.push("--rules", args.rules_path);
   }
-  
+
   // Add output format if JSON requested
   if (args.output_format === "json") {
     cmdArgs.push("--output-format", "json");
   }
-  
+
   // Add the query as the instruction
   cmdArgs.push(args.query);
-  
+
   return new Promise((resolve, reject) => {
     const timeout = (args.timeout_sec || DEFAULT_QUERY_TIMEOUT) * 1000;
     let stdout = "";
     let stderr = "";
     let timedOut = false;
-    
-    const child = spawn("auggie", cmdArgs, {
+
+    const child = spawn(cmd, cmdArgs, {
       env: process.env,
       cwd: args.workspace_root || process.cwd(),
     });
-    
+
     // Set timeout
     const timeoutId = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
       reject(new Error(`Query timed out after ${args.timeout_sec || DEFAULT_QUERY_TIMEOUT} seconds`));
     }, timeout);
-    
+
     // Collect stdout
     child.stdout.on("data", (data) => {
       stdout += data.toString();
     });
-    
+
     // Collect stderr
     child.stderr.on("data", (data) => {
       stderr += data.toString();
     });
-    
+
     // Handle process exit
     child.on("close", (code) => {
       clearTimeout(timeoutId);
@@ -162,7 +165,7 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
         },
       });
     });
-    
+
     // Handle errors
     child.on("error", (error) => {
       clearTimeout(timeoutId);
@@ -249,7 +252,7 @@ function createServer(): Server {
 
         const queryArgs = args as unknown as QueryCodebaseArgs;
 
-        if (!queryArgs.query || typeof queryArgs.query !== "string") {
+        if (!queryArgs.query) {
           throw new Error("'query' argument is required and must be a string");
         }
 
@@ -319,5 +322,4 @@ async function main() {
   }
 }
 
-main();
-
+void main();
