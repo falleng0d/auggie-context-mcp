@@ -93,7 +93,9 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
   }
 
   // Add the query as the instruction
-  cmdArgs.push(args.query);
+  cmdArgs.push(`call codebase-retrieval with "${args.query}". ` +
+    `Return the relevant output and nothing more; everything you write will be ` +
+    `piped to a different CLI tool, so dont write anything other than the output`);
 
   return new Promise((resolve, reject) => {
     const timeout = (args.timeout_sec || DEFAULT_QUERY_TIMEOUT) * 1000;
