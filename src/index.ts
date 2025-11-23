@@ -79,7 +79,7 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
 
   // Add model if provided
   if (args.model) {
-    cmdArgs.push("--model", args.model);
+    cmdArgs.push("--model", args.model ?? 'haiku4.5');
   }
 
   // Add rules path if provided
