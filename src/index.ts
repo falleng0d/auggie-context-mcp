@@ -23,10 +23,41 @@ const DEFAULT_QUERY_TIMEOUT = 240;
 interface QueryCodebaseArgs {
   query: string;
   workspace_root?: string;
-  model?: string;
+}
+
+interface ServerConfig {
+  model: string; // e.g., "haiku4.5"
   rules_path?: string;
-  timeout_sec?: number;
-  output_format?: "text" | "json";
+  timeout_sec: number; // local timeout in seconds
+  output_format: "text" | "json";
+}
+
+function resolveServerConfig(overrides?: Partial<ServerConfig>): ServerConfig {
+  const envModel = process.env.AUGGIE_MODEL || process.env.AUGMENT_MODEL;
+  const envOutput = (process.env.AUGGIE_OUTPUT_FORMAT || process.env.AUGMENT_OUTPUT_FORMAT) as
+    | "text"
+    | "json"
+    | undefined;
+  const envTimeout = process.env.AUGGIE_TIMEOUT_SEC || process.env.AUGMENT_TIMEOUT_SEC;
+  const envRules = process.env.AUGGIE_RULES_PATH || process.env.AUGMENT_RULES_PATH;
+
+  const cfg: ServerConfig = {
+    model: overrides?.model || envModel || "haiku4.5",
+    output_format: overrides?.output_format || envOutput || "text",
+    timeout_sec:
+      overrides?.timeout_sec ??
+      (envTimeout ? parseInt(envTimeout, 10) : undefined) ??
+      DEFAULT_QUERY_TIMEOUT,
+    rules_path: overrides?.rules_path || envRules || undefined,
+  };
+
+  // sanitize
+  if (cfg.output_format !== "json") cfg.output_format = "text";
+  if (!Number.isFinite(cfg.timeout_sec) || cfg.timeout_sec! <= 0) {
+    cfg.timeout_sec = DEFAULT_QUERY_TIMEOUT;
+  }
+
+  return cfg;
 }
 
 interface QueryResult {
@@ -58,7 +89,7 @@ async function checkAuggieCLI(): Promise<void> {
 /**
  * Run Auggie CLI command and stream output
  */
-async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
+async function runAuggieQuery(args: QueryCodebaseArgs, cfg: ServerConfig): Promise<QueryResult> {
   const startTime = Date.now();
 
   let cmd = os.platform() === "win32" ? "cmd" : "auggie";
@@ -77,18 +108,18 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
     cmdArgs.push("--workspace-root", args.workspace_root);
   }
 
-  // Add model if provided
-  if (args.model) {
-    cmdArgs.push("--model", args.model || 'haiku4.5');
+  // Add model from server config
+  if (cfg.model) {
+    cmdArgs.push("--model", cfg.model);
   }
 
-  // Add rules path if provided
-  if (args.rules_path) {
-    cmdArgs.push("--rules", args.rules_path);
+  // Add rules path from server config if provided
+  if (cfg.rules_path) {
+    cmdArgs.push("--rules", cfg.rules_path);
   }
 
-  // Add output format if JSON requested
-  if (args.output_format === "json") {
+  // Add output format if JSON requested by server config
+  if (cfg.output_format === "json") {
     cmdArgs.push("--output-format", "json");
   }
 
@@ -98,7 +129,7 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
     `piped to a different CLI tool, so dont write anything other than the output`);
 
   return new Promise((resolve, reject) => {
-    const timeout = (args.timeout_sec || DEFAULT_QUERY_TIMEOUT) * 1000;
+    const timeout = (cfg.timeout_sec || DEFAULT_QUERY_TIMEOUT) * 1000;
     let stdout = "";
     let stderr = "";
     let timedOut = false;
@@ -112,7 +143,7 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
     const timeoutId = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-      reject(new Error(`Query timed out after ${args.timeout_sec || DEFAULT_QUERY_TIMEOUT} seconds`));
+      reject(new Error(`Query timed out after ${cfg.timeout_sec || DEFAULT_QUERY_TIMEOUT} seconds`));
     }, timeout);
 
     // Collect stdout
@@ -179,7 +210,8 @@ async function runAuggieQuery(args: QueryCodebaseArgs): Promise<QueryResult> {
 /**
  * Create and configure the MCP server
  */
-function createServer(): Server {
+function createServer(configOverrides?: Partial<ServerConfig>): Server {
+  const config = resolveServerConfig(configOverrides);
   const server = new Server(
     {
       name: SERVER_NAME,
@@ -197,38 +229,19 @@ function createServer(): Server {
     {
       name: "query_codebase",
       description: 
-        "Query a codebase using Augment's context engine via Auggie CLI. " +
+        "Query a codebase using the context engine. " +
         "This tool provides intelligent answers about code structure, functionality, " +
-        "and implementation details by leveraging Augment's advanced context retrieval.",
+        "and implementation details by leveraging advanced context retrieval.",
       inputSchema: {
         type: "object",
         properties: {
           query: {
             type: "string",
-            description: "The question or query about the codebase",
+            description: "A description of the information you need.",
           },
           workspace_root: {
             type: "string",
             description: "Absolute path to the workspace/repository root. Defaults to current directory.",
-          },
-          model: {
-            type: "string",
-            description: "Model ID to use (optional). Example: 'claude-3-5-sonnet-20241022'",
-          },
-          rules_path: {
-            type: "string",
-            description: "Path to additional rules file (optional)",
-          },
-          timeout_sec: {
-            type: "number",
-            description: `Query timeout in seconds. Default: ${DEFAULT_QUERY_TIMEOUT}`,
-            default: DEFAULT_QUERY_TIMEOUT,
-          },
-          output_format: {
-            type: "string",
-            enum: ["text", "json"],
-            description: "Output format. Default: text",
-            default: "text",
           },
         },
         required: ["query"],
@@ -259,7 +272,7 @@ function createServer(): Server {
         }
 
         // Run the query
-        const result = await runAuggieQuery(queryArgs);
+        const result = await runAuggieQuery(queryArgs, config);
 
         return {
           content: [
